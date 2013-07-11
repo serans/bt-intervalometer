@@ -9,4 +9,4 @@ Features:
   * Bluetooth interface.
 
 Parts:
-  * arduino: Arduino firmware. Requires Servo an TimerOne libraries.
+  * arduino: Contains the Arduino firmware. Requires _Servo_ and _TimerOne_ libraries.
