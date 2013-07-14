@@ -7,3 +7,6 @@ Features:
   * Adjustable shooting interval, shutter time, and number of pictures to be taken.
   * Supports using a servo for moving the camera.
   * Bluetooth interface.
+
+Parts:
+  * arduino: Contains the Arduino firmware. Requires _Servo_ and _TimerOne_ libraries.
