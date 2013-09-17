@@ -2,6 +2,7 @@
  * INTERVALOMETER
  */
 
+//#include <SoftwareSerial.h> 
 #include <TimerOne.h> 
 #include <Servo.h>
 
@@ -11,6 +12,7 @@
 
 char line_buffer[BUFFER_SIZE];
 
+//CONFIGURATION CONST
 #define ID_PIC_PERIOD     0  // period between shots (in seconds)
 #define ID_TOTAL_PIC_N    1  // total number of pictures to be taken
 #define ID_USE_FOCUS      2  // @TODO wether or not to use the focus
@@ -27,14 +29,19 @@ char line_buffer[BUFFER_SIZE];
 #define STATUS_SHOOTING   1  // when shutter is on
 #define STATUS_WAITING    2  // waiting for the next shot
 
-#define BT_DISCONNECTED   0
-#define BT_CONNECTED      1
-
 #define NUM_STATE_VALUES  11
 
+#define BT_DISCONNECTED   0
+#define BT_LISTENING      1
+#define BT_CONNECTED      2
+
+//PINS CONFIGURATION
+#define PIN_FOCUS         8
+#define PIN_SERVO         9
+//#define PIN_SW_RX         0
+//#define PIN_SW_TX         1
+#define PIN_BT_STATUS     12
 #define PIN_SHUTTER       13
-#define PIN_FOCUS         12
-#define PIN_SERVO         11
 
 // GLOBAL VARS
 char* state_k[] = {
@@ -68,6 +75,11 @@ boolean shutter_closed_flag = false;
 Servo rotation_servo;
 byte rotation_servo_period;
 
+byte bt_status = BT_DISCONNECTED;
+
+//SoftwareSerial Serial = SoftwareSerial(PIN_SW_RX,PIN_SW_TX);
+//#define Serial Serial
+
 //FUNCTIONS
 void assignVars(char *line, char *keys[], unsigned short *values, byte N);
 void configBT();
@@ -92,44 +104,36 @@ void setup () {
   Timer1.initialize();
   pinMode(PIN_SHUTTER, OUTPUT);
   pinMode(PIN_FOCUS, OUTPUT);  
+  pinMode(PIN_BT_STATUS, INPUT);  
   rotation_servo.attach(PIN_SERVO);
-  Serial.begin(115200);
 
-  Serial.println("D:START");
+  Serial.begin(9600);
 }
 
 void loop () {
+ 
+  //check BT status
+  if(digitalRead(PIN_BT_STATUS)==1) {
+    bt_status = BT_CONNECTED;
+  } else {
+    if(bt_status == BT_CONNECTED) bt_status = BT_DISCONNECTED;
+  }
   
-  readSerialInput();
+  //actions based on BT status
+  if(bt_status == BT_DISCONNECTED) {
+      Serial.print("\r\n+INQ=1\r\n");
+      bt_status = BT_LISTENING;
+  } else if (bt_status == BT_CONNECTED) {
+//    readSerialInput();      
+  }
   
+  readSerialInput();  
   takePictures();
   
   if(shutter_closed_flag) {  
     shutter_closed_flag=false;
     afterPictureIsTaken();
   }
-  
-}
-
-/**
- * Commands specific to Seedstudio's Grove Serial Bluetooth
- * change them according to your vendor's specifications
- */
-void configBT() {
-   Serial.println("\r\n+STWMOD=0\r\n"); // slave mode
-   Serial.println("\r\n+STNA=intervalometer\r\n"); // device name
-   Serial.println("\r\n+STOAUT=1\r\n"); // permit paired devices to connect
-   Serial.println("\r\n+STAUTO=0\r\n"); // disable auto-connect
-   delay(2000);  // @TODO: vendor says these delays are required, check
-   Serial.println("\r\n+INQ=1\r\n"); // make device inquirable
-   delay(2000);
-}
-
-/*
- * makes BT inquirable after a connection is lost
- */
-void resetBT() {
-   Serial.println("\r\n+INQ=1\r\n");
 }
 
 /**
@@ -152,36 +156,53 @@ void afterPictureIsTaken() {
    }
 }
 
+/*
+ * When the timing is right, opens the shutter and sets an interruption 
+ * to close the shutter.
+ */
 void takePictures() {
   if(state_v[ID_STATUS] == STATUS_WAITING){ 
     if(millis()-shutter_timestamp >= long(state_v[ID_PIC_PERIOD])*1000) {
-      state_v[ID_STATUS] = STATUS_SHOOTING;
-      unsigned long T;
-      T = long(state_v[ID_SHUTTER_MILLIS]) * 1000;
-
-      shutter_timestamp = millis();
-     
-      digitalWrite( PIN_SHUTTER, 1);
-
-      Timer1.initialize(T);
-      Timer1.attachInterrupt( closeShutter );
-
-      rotation_servo_period++;
+      shoot();
     }
   }
 }
 
+void shoot() {
+  state_v[ID_STATUS] = STATUS_SHOOTING;
+  unsigned long T;
+  T = long(state_v[ID_SHUTTER_MILLIS]) * 1000;
+
+  shutter_timestamp = millis();
+ 
+  digitalWrite( PIN_SHUTTER, 1);
+
+  Timer1.initialize(T);
+  Timer1.attachInterrupt( closeShutter );
+
+  rotation_servo_period++;
+}
+
+/*
+ * Called by Timer1 to close the shutter
+ */
 void closeShutter() {
   digitalWrite( PIN_SHUTTER, 0);
   shutter_closed_flag = true;
   Timer1.stop();
   state_v[ID_NUM_PICS_TAKEN]++;
-  state_v[ID_STATUS] = STATUS_WAITING;
+  
+  if(state_v[ID_NUM_PICS_TAKEN] >= state_v[ID_TOTAL_PIC_N])
+    state_v[ID_STATUS] = STATUS_READY;
+  else
+    state_v[ID_STATUS] = STATUS_WAITING;
 }
 
-
+/*
+ * reads Serial input one character at a time until a line is complete
+ */
 void readSerialInput() {
-  while(Serial.available()) {
+  if(Serial.available()) {
     char c = Serial.read();
     
     if( c == EOL || c == EOT ) {
@@ -211,6 +232,7 @@ void interpretateLine(char *line) {
   } else if(strcmp(line,"START") == 0) {
     Serial.println("OK");
     applyConf();
+    shoot();
   }else{
     assignVars(line_buffer, state_k, state_v, NUM_STATE_VALUES);
   }
@@ -244,14 +266,13 @@ void assignVars(char *line, char *keys[], unsigned short *values, byte N) {
   }
   
   if(assigned) Serial.println("OK");
-  else Serial.println("PARSING ERROR");
+  else Serial.println("UNKNWN");
 }
 
 void applyConf() {
   state_v[ID_NUM_PICS_TAKEN] = 0;
   init_timestamp = millis();
-  shoot();
-  
+ 
   if(state_v[ID_USE_ROTATION] == 1) {
     state_v[ID_ROTATION_CURRENT] = state_v[ID_ROTATION_START];
     rotation_servo.write(state_v[ID_ROTATION_CURRENT]);
@@ -273,7 +294,7 @@ void dumpState() {
   if(state_v[ID_STATUS] == STATUS_WAITING) Serial.println(millis()-init_timestamp);
   else Serial.println(0);
 
-  Serial.println();
+  Serial.print('\n');
 }
 
 void clearBuffer(char *buffer, short N) {
