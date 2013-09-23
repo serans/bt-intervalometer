@@ -72,7 +72,7 @@ byte rotation_servo_period;
 
 //FUNCTIONS
 void assignVars(char *line, char *keys[], unsigned short *values, byte N);
-void configBT();
+void onBtReady();
 void dumpState();
 void shoot();
 void applyConf();
@@ -96,15 +96,18 @@ void setup () {
   pinMode(PIN_FOCUS, OUTPUT);  
   rotation_servo.attach(PIN_SERVO);
 
+  groveSBT_init();
+  groveSBT_onReady = onBtReady;
+  groveSBT_onNewLine = interpretateLine;
+
   Serial.begin(9600);
   Serial.println("BEGINING");
 }
 
 void loop () {
 
-  readSerialInput();      
+  groveSBT_loop();      
 
-  
   takePictures();
   
   if(shutter_closed_flag) {  
@@ -112,6 +115,10 @@ void loop () {
     afterPictureIsTaken();
   }
 }
+
+/**
+ */
+void onBtReady() { groveSBT_inq(); }
 
 /**
  * After a picture is taken:
@@ -173,27 +180,8 @@ void closeShutter() {
   state_v[ID_NUM_PICS_TAKEN]++;
 }
 
-/*
- * reads Serial input one character at a time until a line is complete
- */
-void readSerialInput() {
-  if(groveSBT_available()) {
-    char c = groveSBT_read();
-    
-    if( c == EOL || c == EOT ) {
-      line_buffer[buffer_pos+1] = EOL;
-      interpretateLine(line_buffer);
-      clearBuffer(&line_buffer[0], BUFFER_SIZE);     
-      buffer_pos = 0;
-    } else if( buffer_pos < BUFFER_SIZE-2 ) {
-      line_buffer[buffer_pos] = c;
-      buffer_pos++;
-    }
-    
-  }
-}
-
-void interpretateLine(char *line) {
+void interpretateLine() {
+  char *line = c_serial_buffer.data;
   
   if(strcmp(line,"STATUS") == 0) {
     Serial.println("OK");
@@ -223,7 +211,7 @@ void assignVars(char *line, char *keys[], unsigned short *values, byte N) {
   char *val=line;
   boolean assigned = false;
   
-  while(*val != '\0') {
+  while(*val != '\0' && *val !='\n') {
     if( *val == ':' ) {
       *val = '\0';
       val++;
@@ -239,16 +227,14 @@ void assignVars(char *line, char *keys[], unsigned short *values, byte N) {
         break;
     }
   }
-  
+  /*
   if(assigned) Serial.println("OK");
   else Serial.println("UNKNWN");
+  */
 }
 
 void applyConf() {
   state_v[ID_NUM_PICS_TAKEN] = 0;
-                                      init_timestamp = millis();
-                                      Serial.print("init at:");
-  Serial.println(init_timestamp);
  
   if(state_v[ID_USE_ROTATION] == 1) {
     state_v[ID_ROTATION_CURRENT] = state_v[ID_ROTATION_START];
@@ -272,9 +258,4 @@ void dumpState() {
   else Serial.println(0);
 
   Serial.print('\n');
-}
-
-void clearBuffer(char *buffer, short N) {
-  int i;
-  for(i=0;i<N;i++) buffer[i]='\0';
 }
