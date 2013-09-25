@@ -118,7 +118,9 @@ void loop () {
 
 /**
  */
-void onBtReady() { groveSBT_inq(); }
+void onBtReady() { 
+  groveSBT_inq(); 
+}
 
 /**
  * After a picture is taken:
@@ -181,7 +183,13 @@ void closeShutter() {
 }
 
 void interpretateLine() {
-  char *line = c_serial_buffer.data;
+  char line[80];
+  byte i;
+
+  for(i=0; groveSBT_available(); i++) {
+    line[i] = groveSBT_read();
+    if(line[i] == '\n') line[i] == '\0';
+  }
   
   if(strcmp(line,"STATUS") == 0) {
     Serial.println("OK");
