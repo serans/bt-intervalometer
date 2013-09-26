@@ -12,8 +12,6 @@
 #define EOL '\n'
 #define EOT 4
 
-char line_buffer[BUFFER_SIZE];
-
 //CONFIGURATION CONST
 #define ID_PIC_PERIOD     0  // period between shots (in seconds)
 #define ID_TOTAL_PIC_N    1  // total number of pictures to be taken
@@ -71,7 +69,7 @@ Servo rotation_servo;
 byte rotation_servo_period;
 
 //FUNCTIONS
-void assignVars(char *line, char *keys[], unsigned short *values, byte N);
+void assignVars(char *keys[], unsigned short *values, byte N);
 void onBtReady();
 void dumpState();
 void shoot();
@@ -142,7 +140,6 @@ void afterPictureIsTaken() {
    }
 
    dumpState();
-   Serial.println("EOT");
 }
 
 /*
@@ -183,62 +180,74 @@ void closeShutter() {
 }
 
 void interpretateLine() {
-  char line[80];
-  byte i;
 
-  for(i=0; groveSBT_available(); i++) {
-    line[i] = groveSBT_read();
-    if(line[i] == '\n') line[i] == '\0';
-  }
-  
-  if(strcmp(line,"STATUS") == 0) {
-    Serial.println("OK");
+  if(groveSBT_buffer_equals_string("STATUS\n")) {
+    groveSBT_write("OK\n");
+    groveSBT_init();
     dumpState();
-  } else if(strcmp(line,"RESUME") == 0) {
-    Serial.println("OK");
+  } else if(groveSBT_buffer_equals_string("RESUME\n")) {
+    groveSBT_write("OK\n");
+    groveSBT_init();
     state_v[ID_STATUS] = STATUS_WAITING;
-  } else if(strcmp(line,"STOP") == 0) {
-    Serial.println("OK");
+  } else if(groveSBT_buffer_equals_string("STOP\n")) {
+    groveSBT_write("OK\n");
+    groveSBT_init();
     state_v[ID_STATUS] = STATUS_READY;
-  } else if(strcmp(line,"START") == 0) {
-    Serial.println("OK");
+  } else if(groveSBT_buffer_equals_string("START\n")) {
+    groveSBT_write("OK\n");
+    groveSBT_init();
     applyConf();
     shoot();
   }else{
-    assignVars(line_buffer, state_k, state_v, NUM_STATE_VALUES);
+    assignVars(state_k, state_v, NUM_STATE_VALUES);
+    groveSBT_init();
   }
 
-  Serial.write(EOT);
 }
 
 /*
  * reads a line in the format "key:value" and sets *values accordingly
  */
-void assignVars(char *line, char *keys[], unsigned short *values, byte N) {
-  int i;
-  char *val=line;
-  boolean assigned = false;
+void assignVars(char *keys[], unsigned short *values, byte N) {
+  int i,j;
+  char key[10];
+  char val[4];
+  char c;
   
-  while(*val != '\0' && *val !='\n') {
-    if( *val == ':' ) {
-      *val = '\0';
-      val++;
+  boolean key_found = false;
+  boolean value_found = false;
+
+  for(i=0; groveSBT_available(); i++) {
+    key[i] = groveSBT_read();
+    if(key[i] == ':') {
+      key[i] = '\0';
+      key_found = true;
       break;
     }
-    val++;
   }
-
-  for(i=0; i<N; i++) {
-    if(strcmp(keys[i],line) == 0) {
-        values[i] = atoi(val);
-        assigned = true;
+  
+  if(key_found) {
+    for(i=0; groveSBT_available(); i++) {
+      val[i] = groveSBT_read();
+      if(val[i] == '\n') {
+        val[i] == '\0';
+        value_found = true;
         break;
+      }
     }
   }
-  /*
-  if(assigned) Serial.println("OK");
-  else Serial.println("UNKNWN");
-  */
+  
+  if(value_found) {
+    for(i=0; i<N; i++) {
+      if(strcmp(keys[i],key) == 0) {
+          values[i] = atoi(val);
+          groveSBT_write("OK\n");
+          return;
+      }
+    }
+  }
+
+  groveSBT_write("UNKNWN\n");
 }
 
 void applyConf() {
@@ -255,15 +264,20 @@ void dumpState() {
   int i;
 
   for (i=0; i<NUM_STATE_VALUES; i++) {
-    Serial.print(state_k[i]);
-    Serial.print(":");
-    if(i == ID_STATUS) Serial.println(status_name[state_v[i]]);
-    else Serial.println(state_v[i]);
+    groveSBT_write(state_k[i]);
+    groveSBT_write(":");
+    
+    if(i == ID_STATUS) 
+      groveSBT_write(status_name[state_v[i]]);
+    else 
+      groveSBT_write(state_v[i]);
+    
+    groveSBT_write("\n");
   }
 
-  Serial.print("elapsed_time:");
-  if(state_v[ID_STATUS] == STATUS_WAITING) Serial.println(millis()-init_timestamp);
-  else Serial.println(0);
+  groveSBT_write("elapsed_time:");
+  if(state_v[ID_STATUS] == STATUS_WAITING) groveSBT_write(millis()-init_timestamp);
+  else groveSBT_write(0);
 
-  Serial.print('\n');
+  groveSBT_write("\n\n");
 }
