@@ -4,9 +4,11 @@
  
 #include <SoftwareSerial.h> 
 #include <GroveSBT.h>
-
 #include <TimerOne.h> 
-#include <Servo.h>
+
+#ifdef USE_SERVO
+  #include <Servo.h>
+#endif
 
 #define BUFFER_SIZE 80
 #define EOL '\n'
@@ -65,7 +67,10 @@ unsigned long shutter_timestamp;
 unsigned long init_timestamp;
 boolean shutter_closed_flag = false;
 
-Servo rotation_servo;
+#ifdef USE_SERVO
+  Servo rotation_servo;
+#endif
+
 byte rotation_servo_period;
 
 //FUNCTIONS
@@ -89,15 +94,19 @@ void setup () {
   state_v[ID_ROTATION_INC] = 1;
   
   //INITIALIZATIONS
-//  Timer1.initialize();
   pinMode(PIN_SHUTTER, OUTPUT);
   pinMode(PIN_FOCUS, OUTPUT);  
-  rotation_servo.attach(PIN_SERVO);
+  
+  Timer1.attachInterrupt(NULL);
+
+  #ifdef USE_SERVO
+    rotation_servo.attach(PIN_SERVO);
+  #endif
 
   groveSBT_init();
   groveSBT_onReady = onBtReady;
   groveSBT_onNewLine = interpretateLine;
-
+  
   Serial.begin(9600);
   Serial.println("BEGINING");
 }
@@ -110,6 +119,7 @@ void loop () {
   
   if(shutter_closed_flag) {  
     shutter_closed_flag=false;
+    state_v[ID_NUM_PICS_TAKEN]++;
     afterPictureIsTaken();
   }
 }
@@ -132,9 +142,12 @@ void afterPictureIsTaken() {
          if(state_v[ID_ROTATION_INC_P] <= rotation_servo_period) {
            rotation_servo_period = 0;
            state_v[ID_ROTATION_CURRENT]+=state_v[ID_ROTATION_INC];
-           rotation_servo.write(state_v[ID_ROTATION_CURRENT]);
+           #ifdef USE_SERVO
+             rotation_servo.write(state_v[ID_ROTATION_CURRENT]);
+           #endif
          }
        }
+       state_v[ID_STATUS] = STATUS_WAITING;
    } else {
        state_v[ID_STATUS] = STATUS_READY;
    }
@@ -163,6 +176,7 @@ void shoot() {
  
   digitalWrite( PIN_SHUTTER, 1);
 
+  Timer1.detachInterrupt();
   Timer1.initialize(T);
   Timer1.attachInterrupt( closeShutter );
 
@@ -173,10 +187,9 @@ void shoot() {
  * Called by Timer1 to close the shutter
  */
 void closeShutter() {
+  Timer1.stop();
   digitalWrite( PIN_SHUTTER, 0);
   shutter_closed_flag = true;
-  Timer1.stop();
-  state_v[ID_NUM_PICS_TAKEN]++;
 }
 
 void interpretateLine() {
@@ -194,6 +207,7 @@ void interpretateLine() {
     groveSBT_init();
     state_v[ID_STATUS] = STATUS_READY;
   } else if(groveSBT_buffer_equals_string("START\n")) {
+    init_timestamp = millis();
     groveSBT_write("OK\n");
     groveSBT_init();
     applyConf();
@@ -247,7 +261,6 @@ void assignVars(char *keys[], unsigned short *values, byte N) {
     }
   }
 
-  groveSBT_write("UNKNWN\n");
 }
 
 void applyConf() {
@@ -255,7 +268,11 @@ void applyConf() {
  
   if(state_v[ID_USE_ROTATION] == 1) {
     state_v[ID_ROTATION_CURRENT] = state_v[ID_ROTATION_START];
-    rotation_servo.write(state_v[ID_ROTATION_CURRENT]);
+    
+    #ifdef USE_SERVO
+      rotation_servo.write(state_v[ID_ROTATION_CURRENT]);
+    #endif
+    
     rotation_servo_period = 0;
   }
 }
