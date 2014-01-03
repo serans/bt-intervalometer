@@ -11,3 +11,10 @@ Features:
 Parts:
   * arduino: Contains the Arduino firmware. Requires _TimerOne_ library (_Servo_ optional).
   * (In development) android: Android app which communitaces via bluetooth with the arduino and acts as an interface between the user and the intervalometer.
+
+
+Licence
+========
+All source code in this project is
+  * (c) MH Serans, unless stated otherwise
+  * Available under the GPL v3 licence, unless stated otherwise
